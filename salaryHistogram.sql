@@ -5,16 +5,18 @@
    Objetivo:
    Distribuir as frequências dos salários dos professores
    em intervalos, formando um histograma.
-
    ============================================================ */
 
-CREATE OR ALTER PROCEDURE dbo.salaryHistogram
+IF OBJECT_ID('dbo.salaryHistogram', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.salaryHistogram;
+
+CREATE PROCEDURE dbo.salaryHistogram
     @quantidadeIntervalos INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Declaração das variáveis que serão usadas no cálculo
+    -- Declaração das variáveis usadas no cálculo
     DECLARE @salarioMinimo NUMERIC(12, 2);
     DECLARE @salarioMaximo NUMERIC(12, 2);
     DECLARE @tamanhoIntervalo NUMERIC(12, 2);
@@ -25,49 +27,64 @@ BEGIN
         @salarioMaximo = MAX(salary)
     FROM instructor;
 
-    -- Calcula o tamanho de cada intervalo do histograma
+    -- Calcula o tamanho de cada intervalo
     SET @tamanhoIntervalo = CEILING((@salarioMaximo - @salarioMinimo + 1) / @quantidadeIntervalos);
 
-    -- Cria os intervalos e conta quantos professores estão em cada faixa salarial
-    ;WITH intervalos AS
+    -- Cria uma tabela temporária para armazenar os intervalos
+    CREATE TABLE #intervalos
     (
-        SELECT
-            1 AS numeroIntervalo,
-            @salarioMinimo AS valorMinimo,
-            @salarioMinimo + @tamanhoIntervalo - 1 AS valorMaximo
+        numeroIntervalo INT,
+        valorMinimo NUMERIC(12, 2),
+        valorMaximo NUMERIC(12, 2)
+    );
 
-        UNION ALL
+    -- Variáveis auxiliares para montar os intervalos
+    DECLARE @contador INT = 1;
+    DECLARE @inicio NUMERIC(12, 2);
+    DECLARE @fim NUMERIC(12, 2);
 
-        SELECT
-            numeroIntervalo + 1,
-            valorMaximo + 1,
-            valorMaximo + @tamanhoIntervalo
-        FROM intervalos
-        WHERE numeroIntervalo < @quantidadeIntervalos
-    )
+    SET @inicio = @salarioMinimo;
 
+    -- Monta os intervalos do histograma
+    WHILE @contador <= @quantidadeIntervalos
+    BEGIN
+        IF @contador = @quantidadeIntervalos
+            SET @fim = @salarioMaximo;
+        ELSE
+            SET @fim = @inicio + @tamanhoIntervalo - 1;
+
+        INSERT INTO #intervalos
+        (
+            numeroIntervalo,
+            valorMinimo,
+            valorMaximo
+        )
+        VALUES
+        (
+            @contador,
+            @inicio,
+            @fim
+        );
+
+        SET @inicio = @fim + 1;
+        SET @contador = @contador + 1;
+    END;
+
+    -- Conta quantos professores estão em cada faixa salarial
     SELECT
-        CAST(valorMinimo AS INT) AS valorMinimo,
-        CAST(
-            CASE 
-                WHEN numeroIntervalo = @quantidadeIntervalos THEN @salarioMaximo
-                ELSE valorMaximo
-            END AS INT
-        ) AS valorMaximo,
-        COUNT(i.ID) AS total
-    FROM intervalos
-    LEFT JOIN instructor i
-        ON i.salary >= valorMinimo
-       AND i.salary <= CASE 
-                           WHEN numeroIntervalo = @quantidadeIntervalos THEN @salarioMaximo
-                           ELSE valorMaximo
-                       END
+        CAST(i.valorMinimo AS INT) AS valorMinimo,
+        CAST(i.valorMaximo AS INT) AS valorMaximo,
+        COUNT(inst.ID) AS total
+    FROM #intervalos i
+    LEFT JOIN instructor inst
+        ON inst.salary >= i.valorMinimo
+       AND inst.salary <= i.valorMaximo
     GROUP BY
-        numeroIntervalo,
-        valorMinimo,
-        valorMaximo
+        i.numeroIntervalo,
+        i.valorMinimo,
+        i.valorMaximo
     ORDER BY
-        valorMinimo;
+        i.numeroIntervalo;
 END;
 
 
